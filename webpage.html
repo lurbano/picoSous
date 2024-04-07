@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PicoW Test Server</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        input[type=number] {
+            width: 5em;
+        }
+        .params {
+            width: 5em;
+            border: 1px solid black;
+        }
+    </style>
+</head>
+<body>
+    Pico W here.
+    
+    <div id="data">Hi</div>
+
+    LED: <input type="button" id="led" value="LED"> | 
+    <input type="button" id="Temperature" value="Get Temperature"> 
+    <span id="Tmp"></span> |
+    Relay: <input type="button" id="Relay" value="Switch"> |
+
+    <div>
+
+        <h3>Sous</h3>
+        <div id="ctrls">
+            set Temperature: <input type="number" class="mainCtrl" id="setTemp" value="56"> ||
+            dt: <input type="number" id="dt" value="10"> | 
+            PID: Kp=<input type="number" id="pid_Kp" value="10"> | 
+            Ki=<input type="number" name="" id="pid_Ki" value="0"> | 
+            Kd=<input type="number" name="" id="pid_Kd" value="-100">
+        </div>
+        <div id="parameters">
+            e: <span class="params" id="Error"></span> | 
+            <span class="params" id="dTdt"></span> |
+            <span class="params" id="Prop"></span> |
+            <span class="params" id="Int"></span> |
+            <span class="params" id="Dif"></span> |
+            <span class="params" id="Control"></span> |
+        </div>
+        <div id="thermostatInputs">
+            <input type="button" value="Start" id="thermostatStart">
+            <input type="button" value="Restart" id="thermostatRestart">
+            <input type="button" value="Stop" id="thermostatStop">
+            <br>
+            <div id="startResponse"></div>
+            <canvas id="TGraph"></canvas>
+        </div>
+
+
+        <div>
+            Time: <span id="timeMonitor"></span>
+            Temperature: <span id="TMonitor"></span>
+        </div>
+        <div>
+            <input type="button" id="currentT" value="Current Temperature Record"><br>
+            <span id="currentTData"></span>
+        </div>
+        <div>
+            <input type="button" id="longT" value="Long-Term Temperature Record"><br>
+            <span id="longTData"></span>
+        </div>
+        
+
+    </div>
+    
+</body>
+<!-- <style>
+    div {
+        color: #4b8500;
+        background-color: #9bd0f5;
+    }
+</style> -->
+<script>
+    d = document;
+
+    const ctx = d.getElementById('TGraph');
+    var dataT = {
+        datasets: [
+            {
+                label: "Temperature (°C)",
+                data: [],
+                borderColor: '#006eb8',
+                backgroundColor: '#9BD0F5',
+                showLine: true,
+            },
+            {
+                label: "Set Temp. (°C)",
+                data: [],
+                borderColor: '#4b8500',
+                backgroundColor: '#4b8500',
+                showLine: true,
+            }
+        ]
+    }
+    var chart = new Chart(ctx, {
+        type: 'scatter',
+        data: dataT,
+        options: {
+            scales: {
+                x: {
+                    type: 'linear',
+                    position: 'bottom',
+                    text: "time (sec)",
+                    display: true
+                    // min: 0,
+                    // max: 100
+                },
+                y: {
+                    type: 'linear',
+                    position: 'left',
+                    // min: 10,
+                    // max: 70
+                }
+            }
+        }
+    });
+    var chartId = 0;
+
+    d.getElementById("data").innerHTML = "Total";
+
+    ledStatus = "OFF";
+    ledButton = d.getElementById("led");
+    ledButton.addEventListener("click", makeRequest);
+
+    function makeRequest() {
+        let xR = new XMLHttpRequest();
+        xR.onreadystatechange = function() {
+            if (this.readyState == 4 && this.status == 200) {
+                
+                console.log("Server Response:", this.responseText);
+                data = JSON.parse(this.responseText);
+                ledButton.value = data['status'] ? "ON" : "OFF";
+            }
+        }
+        let data = {};
+        ledStatus = ledStatus === "OFF" ? "ON" : "OFF";
+        data["action"] = ledStatus;
+        xR.open("POST", "led", true);
+        xR.send(JSON.stringify(data));
+    }
+
+    TButton = d.getElementById("Temperature");
+    TButton.addEventListener("click", getT);
+
+    function getT(){
+        let xR = new XMLHttpRequest();
+        xR.onreadystatechange = function() {
+            if (this.readyState == 4 && this.status == 200) {
+                
+                console.log("Server Response:", this.responseText);
+                data = JSON.parse(this.responseText);
+                Tmp.innerHTML = data['value'];
+            }
+        }
+        let data = {};
+        data["action"] = "getT";
+        xR.open("POST", "T", true);
+        xR.send(JSON.stringify(data));
+    }
+
+
+    relayButton = d.getElementById("Relay");
+    relayButton.addEventListener("click", relaySwitch);
+
+    function relaySwitch(){
+        let xR = new XMLHttpRequest();
+        xR.onreadystatechange = function() {
+            if (this.readyState == 4 && this.status == 200) {
+                
+                console.log("Server Response:", this.responseText);
+                data = JSON.parse(this.responseText);
+                Relay.value = data['value'] ? "ON" : "OFF";
+            }
+        }
+        let data = {};
+        data["action"] = "switchR";
+        xR.open("POST", "relay", true);
+        xR.send(JSON.stringify(data));
+    }
+
+    currentT.addEventListener("click", function(){
+        getTRecords("current");
+    });
+    longT.addEventListener("click", function(){
+        getTRecords("long");
+    });
+
+    function getTRecords(timeFrame){
+        let xR = new XMLHttpRequest();
+        xR.onreadystatechange = function() {
+            if (this.readyState == 4 && this.status == 200) {
+                
+                console.log("Server Response:", this.responseText);
+                data = JSON.parse(this.responseText);
+                if (data['item'] === "currentT"){
+                    currentTData.innerHTML = data['value'];
+                    let n = data['value'].length
+                    TMonitor.innerHTML = data['value'][n-1];
+                }
+                if (data['item'] === "longT"){
+                    longTData.innerHTML = data['value'];
+                }
+
+                //Relay.value = data['value'] ? "ON" : "OFF";
+            }
+        }
+        let data = {};
+        data["action"] = "getTRecords";
+        data["timeFrame"] = timeFrame;
+        xR.open("POST", "getT", true);
+        xR.setRequestHeader("Cache-Control", "no-cache, no-store, max-age=0")
+        console.log("Sending request for Temperature data.")
+        xR.send(JSON.stringify(data));
+    }
+
+    thermostatStart.addEventListener("click", function(){
+        runThermostat("start");
+    })
+    thermostatRestart.addEventListener("click", function(){
+        runThermostat("restart");
+    })
+    thermostatStop.addEventListener("click", function(){
+        runThermostat("stop");
+    })
+
+    function runThermostat(startType="start"){
+        let xR = new XMLHttpRequest();
+        xR.onreadystatechange = function() {
+            if (this.readyState == 4 && this.status == 200) {
+                
+                console.log("Server Response:", this.responseText);
+                data = JSON.parse(this.responseText);
+                startResponse.innerHTML = data['status'];
+
+                if (data['status'] === 'started'){
+                    //createChart();
+                    chartId = setInterval(createChart, 5000);
+                } else {
+                    if (typeof chartId !== 'undefined'){
+                        clearInterval(chartId);
+                    }
+                }
+
+                //Relay.value = data['value'] ? "ON" : "OFF";
+            }
+        }
+        let data = {};
+        data["state"] = {};
+        data["state"]["setT"] = parseFloat(setTemp.value);
+        data["state"]["dt"] = parseFloat(dt.value);
+        data["state"]["Kp"] = parseFloat(pid_Kp.value);
+        data["state"]["Ki"] = parseFloat(pid_Ki.value);
+        data["state"]["Kd"] = parseFloat(pid_Kd.value);
+        data["action"] = startType;
+        xR.open("POST", "startCtrl", true);
+        xR.setRequestHeader("Cache-Control", "no-cache, no-store, max-age=0")
+        console.log(`${startType}ing thermostat controller`)
+        xR.send(JSON.stringify(data));
+    }
+
+    // nCheck = setInterval(getT, 5000);
+
+    //updateChart();
+
+    function createChart(){
+        let xR = new XMLHttpRequest();
+        xR.onreadystatechange = function() {
+            if (this.readyState == 4 && this.status == 200) {
+                
+                //console.log("Server Response:", this.responseText);
+                data = JSON.parse(this.responseText);
+                // console.log("T_data:", data['T_data']);
+                // console.log("typeof(chart)", typeof chart);
+
+                updateParams(data['params']);
+                updateGraph(data['state']);
+
+            }
+        }
+        let data = {};
+        data["action"] = "getAll";
+        xR.open("POST", "getChartData", true);
+        xR.setRequestHeader("Cache-Control", "no-cache, no-store, max-age=0")
+        console.log("Sending request for Temperature data.")
+        xR.send(JSON.stringify(data));
+    }
+
+    function updateParams(params){
+        for (const [key, value] of Object.entries(params)) {
+            // console.log(`${key}: ${value}`);
+            d.getElementById(key).innerHTML = value;
+        }
+    }
+
+    function updateGraph(state){
+        let T_data = state['T_data'] 
+        let T_long = state['T_long']
+        let setT = state['setT']
+        T_data_set = [];
+
+        let runTime = T_data[T_data.length-1][0];
+
+        if (runTime > 60*60){
+            divisor = 60*60; 
+            tUnit="hrs";
+        } else if (runTime > 60) {
+            divisor = 60; 
+            tUnit="min";
+        } else {
+            divisor = 1; 
+            tUnit="sec";
+        }
+        let d = {}
+        for (let i=0; i<T_long.length; i++){
+            let d = {
+                x: T_long[i][0]/divisor, 
+                y: T_long[i][1]
+            };
+            T_data_set.push(d);
+        }
+        for (let i=0; i<T_data.length; i++){
+            d = {
+                x: T_data[i][0]/divisor, 
+                y: T_data[i][1]
+            };
+            T_data_set.push(d);
+        }
+        
+        console.log('T_data_set:', T_data_set);
+
+        let setT_data = [
+            {x:0,y:setT}, 
+            {x:d['x'], y:setT}
+        ];
+        chart.data.datasets[1]['data'] = setT_data;
+        
+        chart.data.datasets[0]['data'] = T_data_set;
+        chart.options.scales.x.text = `time (${tUnit})`;
+        chart.update();
+    }
+
+</script>
+</html>

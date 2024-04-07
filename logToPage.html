@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PicoW Test Server</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        input[type=number] {
+            width: 5em;
+        }
+        .params {
+            width: 5em;
+            border: 1px solid black;
+        }
+        .dataOutput {
+            border: 1px solid black;
+        }
+    </style>
+</head>
+<body>
+    Pico W here.
+    
+    <div id="data">Hi</div>
+
+        Pico ID: <select name="picoID" id="picoID">
+            <option value="beesWax" selected>beesWax</option>
+        </select> | <br>
+
+        LED: <input type="button" id="led" value="LED"> | 
+        <div>
+            <input type="button" id="Temperature" value="Get Temperature"> 
+            <div id="Tmp"></div> 
+        </div>
+        <div>
+            <input type="button" value="Monitor Temperature: OFF" id="TMonitor"> every <input type="number" id="TMonitorTimestep" value="10"> seconds
+            <div id="TMonitorVal"></div>
+        </div>
+        
+
+    <div>
+
+        <h3>Logger</h3>
+        <div id="ctrls">
+            dt: <input type="number" class="mainCtrl" id="dt" value="10"> seconds ||
+            endTime: <input type="number" id="endTime" value="86400"> seconds | 
+            <input type="button" id="logSwitch" value="Start Logging">
+        </div>
+
+        <div>
+            <canvas id="TGraph"></canvas>
+        </div>
+
+
+
+
+        
+
+    </div>
+    
+</body>
+<!-- <style>
+    div {
+        color: #4b8500;
+        background-color: #9bd0f5;
+    }
+</style> -->
+<script>
+    d = document;
+
+    t = []; // time
+    T = []; // Temperature
+
+    var picoID = d.getElementById('picoID').value;
+    console.log("picoID:", picoID)
+
+    function C2F(c){
+        return (parseFloat(c)*9/5)+32;
+    }
+
+    const ctx = d.getElementById('TGraph');
+    var dataT = {
+        datasets: [
+            {
+                label: "S[0] (°C)",
+                data: [],
+                borderColor: '#006eb8',
+                backgroundColor: '#9BD0F5',
+                showLine: true,
+            },
+            {
+                label: "s[1] (°C)",
+                data: [],
+                borderColor: '#4b8500',
+                backgroundColor: '#4b8500',
+                showLine: true,
+            }
+        ]
+    }
+    var chart = new Chart(ctx, {
+        type: 'scatter',
+        data: dataT,
+        options: {
+            scales: {
+                x: {
+                    type: 'linear',
+                    position: 'bottom',
+                    text: "time (sec)",
+                    display: true
+                    // min: 0,
+                    // max: 100
+                },
+                y: {
+                    type: 'linear',
+                    position: 'left',
+                    // min: 10,
+                    // max: 70
+                }
+            }
+        }
+    });
+    var chartId = 0;
+
+
+
+    d.getElementById("data").innerHTML = "Total";
+
+    ledStatus = "OFF";
+    ledButton = d.getElementById("led");
+    ledButton.addEventListener("click", makeRequest);
+
+    function makeRequest() {
+        let xR = new XMLHttpRequest();
+        xR.onreadystatechange = function() {
+            if (this.readyState == 4 && this.status == 200) {
+                
+                console.log("Server Response:", this.responseText);
+                data = JSON.parse(this.responseText);
+                ledButton.value = data['status'] ? "ON" : "OFF";
+            }
+        }
+        let data = {};
+        ledStatus = ledStatus === "OFF" ? "ON" : "OFF";
+        data["action"] = ledStatus;
+        xR.open("POST", "led", true);
+        xR.send(JSON.stringify(data));
+    }
+
+    TButton = d.getElementById("Temperature");
+    TButton.addEventListener("click", getT);
+
+    function getT(graph=false, monitor=false){
+        let xR = new XMLHttpRequest();
+        xR.onreadystatechange = function() {
+            if (this.readyState == 4 && this.status == 200) {
+                
+                console.log("Server Response:", this.responseText);
+                data = JSON.parse(this.responseText);
+                let t = new Date();
+                let txt = `${t.toLocaleString("en-US")}: `;
+                for (let i=0; i<data.length; i++){
+                    let c = parseFloat(data[i]['value']).toFixed(1);
+                    let f = C2F(c).toFixed(1);
+                    let units = data[i]['u'];
+                    txt += '<span class="dataOutput">';
+                    txt += ` S[${i}]: ${c} ${units} (${f} °F) |`;
+                    txt += '</span>';
+                }
+                Tmp.innerHTML = txt;
+            }
+        }
+        let data = {};
+        data["action"] = "getT";
+        xR.open("POST", "T", true);
+        xR.send(JSON.stringify(data));
+    }
+
+    l_monitor_T = false;
+    tMonitorID = -1;
+    tMonitor = d.getElementById("TMonitor");
+    tMonitor.addEventListener("click", function(){
+        let dtInput = d.getElementById("TMonitorTimestep");
+        let dt = parseFloat(dtInput.value);
+        // dtInput.disabled = l_monitor_T ? true : false;
+
+        l_monitor_T = l_monitor_T ? false : true;
+        if (l_monitor_T) {
+            t = "ON";
+            dtInput.disabled = true;
+            tMonitorID = setInterval(getT, dt*1000);
+        } else {
+            t = "OFF";
+            dtInput.disabled = false;
+            clearInterval(tMonitorID);
+        }
+        // let t = l_monitor_T ? "ON" : "OFF";
+        this.value = `Monitor Temperature: ${t}`;
+
+        // let dtInput = d.getElementById("TMonitorTimestep");
+        // let dt = parseFloat(dtInput.value);
+        // dtInput.disabled = l_monitor_T ? true : false;
+        console.log(`dt: ${dt} ${dtInput.disabled}`);
+    })
+
+
+    function createChart(){
+        let xR = new XMLHttpRequest();
+        xR.onreadystatechange = function() {
+            if (this.readyState == 4 && this.status == 200) {
+                
+                //console.log("Server Response:", this.responseText);
+                data = JSON.parse(this.responseText);
+                // console.log("T_data:", data['T_data']);
+                // console.log("typeof(chart)", typeof chart);
+
+                updateParams(data['params']);
+                updateGraph(data['state']);
+
+            }
+        }
+        let data = {};
+        data["action"] = "getAll";
+        xR.open("POST", "getChartData", true);
+        xR.setRequestHeader("Cache-Control", "no-cache, no-store, max-age=0")
+        console.log("Sending request for Temperature data.")
+        xR.send(JSON.stringify(data));
+    }
+
+    function updateParams(params){
+        for (const [key, value] of Object.entries(params)) {
+            // console.log(`${key}: ${value}`);
+            d.getElementById(key).innerHTML = value;
+        }
+    }
+
+    function updateGraph(state){
+        let T_data = state['T_data'] 
+        let T_long = state['T_long']
+        let setT = state['setT']
+        T_data_set = [];
+
+        let runTime = T_data[T_data.length-1][0];
+
+        if (runTime > 60*60){
+            divisor = 60*60; 
+            tUnit="hrs";
+        } else if (runTime > 60) {
+            divisor = 60; 
+            tUnit="min";
+        } else {
+            divisor = 1; 
+            tUnit="sec";
+        }
+        let d = {}
+        for (let i=0; i<T_long.length; i++){
+            let d = {
+                x: T_long[i][0]/divisor, 
+                y: T_long[i][1]
+            };
+            T_data_set.push(d);
+        }
+        for (let i=0; i<T_data.length; i++){
+            d = {
+                x: T_data[i][0]/divisor, 
+                y: T_data[i][1]
+            };
+            T_data_set.push(d);
+        }
+        
+        console.log('T_data_set:', T_data_set);
+
+        let setT_data = [
+            {x:0,y:setT}, 
+            {x:d['x'], y:setT}
+        ];
+        chart.data.datasets[1]['data'] = setT_data;
+        
+        chart.data.datasets[0]['data'] = T_data_set;
+        chart.options.scales.x.text = `time (${tUnit})`;
+        chart.update();
+    }
+
+
+    //NEW CHARTING
+    l_log = false;
+    startTime = Date.now();
+    logID = -1;
+
+    logSwitch.addEventListener("click", logData);
+
+    function logData(){
+        if (l_log){
+            l_log = false;
+            if (logID !== -1) {
+                clearInterval(logID);
+            }
+        } else {
+            l_log = true;
+            startTime = Date.now()
+        }
+
+        if (l_log){
+            logID = setInterval(function(){getT(graph=true)}, 5000);
+        }
+    }
+
+    function doGraph(){
+        for (let i=0; i<T.length; i++){
+            d = {
+                x: t[i]
+            }
+        }
+        chart.data.datasets[0]['data'] = T_data_set;
+        chart.options.scales.x.text = `time (${tUnit})`;
+        chart.update();
+    }
+
+
+
+</script>
+</html>
+
